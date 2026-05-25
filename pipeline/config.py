@@ -41,6 +41,13 @@ class Config:
     openrouter_temperature: float = float(os.getenv("OPENROUTER_TEMPERATURE", "0.0"))
     openrouter_max_tokens: int = int(os.getenv("OPENROUTER_MAX_TOKENS", "4096"))
 
+    # ── Remote Marker (offload extraction to a server) ─────────────────────
+    remote_marker_url: str = os.getenv(
+        "REMOTE_MARKER_URL",
+        "",  # Empty = use local Marker
+    )
+    remote_marker_timeout: int = int(os.getenv("REMOTE_MARKER_TIMEOUT", "300"))
+
     # ── General ─────────────────────────────────────────────────────────────
     file_size_limit: int = 10 * 1024 * 1024  # 10 MB
 

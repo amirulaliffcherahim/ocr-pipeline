@@ -1,16 +1,17 @@
 # Resume Parser
 
-Lightweight resume parser — **PDF/TXT → Markdown → Structured JSON** via LLM extraction. Works with OpenRouter (cloud), Ollama (local), or LM Studio (local).
+Lightweight resume parser — **PDF → Markdown → Structured JSON** via LLM extraction. Extracts applicant photos, QR codes, and structured data. Works with OpenRouter (cloud), Ollama (local), or LM Studio (local).
 
 ## Features
 
 - **PDF parsing** via `pymupdf4llm` with auto-fallback to OCR for scanned/image-based PDFs
-- **Multi-strategy**: `auto` (native → OCR fallback), `native`, or `ocr` modes for any resume layout
-- **QR code decoding** — extracts LinkedIn, GitHub, portfolio links from QR codes embedded in PDFs
+- **Hybrid mode** — native + OCR merge for maximum text coverage on complex layouts
+- **Photo extraction** — automatically detects and extracts applicant headshots from page 1
+- **QR code decoding** — extracts LinkedIn, GitHub, portfolio links from QR codes
 - **LLM extraction** using any OpenAI-compatible API — one-line switch between backends
 - **Structured output** validated by Pydantic, normalized for consistency across runs
 - **Date normalization** — `"2024"`, `"Jan 2024"`, `"2024-01"` all become `"2024-01"`
-- **Rate limiting** with retry + exponential backoff + in-process concurrency control
+- **Rate limiting** with retry + exponential backoff + concurrency control
 
 ## Quick Start
 
@@ -34,12 +35,13 @@ Pick a backend — set `LLM_BACKEND` and configure that section:
 | **Ollama** (local) | `ollama` | `OLLAMA_MODEL` (run `ollama pull qwen3:1.7b` first) |
 | **LM Studio** (local) | `lmstudio` | `LM_STUDIO_MODEL` (load model in LM Studio UI) |
 
+Recommended model for production: `qwen/qwen3.5-flash` (fast, cheap, reliable).
+
 ### 3. Run (CLI)
 
 ```bash
-# Drop .pdf / .txt files in data/input/, then:
-python main.py
-# → JSON in data/output/
+python main.py                # processes data/input/ → data/output/
+python test_runner.py         # batch test with accuracy scoring
 ```
 
 ### 4. Run (API)
@@ -49,40 +51,72 @@ uvicorn api:app --host 0.0.0.0 --port 8001
 # → http://localhost:8001/docs
 ```
 
-```bash
-curl -X POST http://localhost:8001/resume/upload -F "file=@resume.pdf"
-```
+## API Guide
 
-## Switching Backends
+Three endpoints for different needs:
 
-All backends speak the OpenAI `/chat/completions` protocol — just change one line:
+| Endpoint | Returns | LLM? | Photo? | Speed |
+|----------|---------|------|--------|-------|
+| `POST /resume` | Resume JSON | Yes | No | ~10-30s |
+| `POST /photo` | `{"photo_path": "..."}` | No | Yes | ~1s |
+| `POST /full` | Resume JSON + photo | Yes | Yes | ~10-30s |
 
-```env
-# .env — pick one:
-LLM_BACKEND=openrouter   # cloud: qwen3, claude, gpt-4o-mini, etc.
-LLM_BACKEND=ollama       # local: qwen3:1.7b, llama3.2:3b, etc.
-LLM_BACKEND=lmstudio     # local: any model loaded in LM Studio
-```
-
-Ollama exposes its API at `http://localhost:11434/v1` — no extra config needed. LM Studio at `http://localhost:1234/v1`.
-
-## API Endpoints
-
-### `POST /resume/upload`
-
-Upload a PDF or TXT resume. File is deleted immediately after processing.
+### `POST /resume` — Extract resume data only
 
 ```bash
-curl -X POST http://localhost:8001/resume/upload -F "file=@resume.pdf"
+curl -X POST http://localhost:8001/resume \
+  -F "file=@resume.pdf"
+
+# With layout override for 2-column resumes:
+curl -X POST "http://localhost:8001/resume?layout=single" \
+  -F "file=@resume.pdf"
 ```
 
-**Response** (200): Full `ResumeData` JSON.
+**Response (200):**
+```json
+{
+  "personal_info": {
+    "full_name": "Jane Doe",
+    "email": "jane@example.com",
+    "phone": "+60 12-345 6789",
+    "location": "Kuala Lumpur, Malaysia",
+    "linkedin": null,
+    "website": null
+  },
+  "summary": "Experienced software engineer...",
+  "skills": ["Python", "JavaScript", "React"],
+  "experience": [...],
+  "projects": [...],
+  "education": [...],
+  "certifications": []
+}
+```
 
-| Status | Cause |
-|--------|-------|
-| 400 | Missing file or unsupported format |
-| 422 | LLM extraction / JSON parsing failure |
-| 500 | Internal error |
+### `POST /photo` — Extract photo only
+
+```bash
+curl -X POST http://localhost:8001/photo \
+  -F "file=@resume.pdf"
+```
+
+**Response (200):**
+```json
+{"photo_path": "photos/resume_photo.jpg"}
+```
+
+Fetch the image:
+```bash
+curl http://localhost:8001/photos/resume_photo.jpg --output photo.jpg
+```
+
+### `POST /full` — Resume + photo
+
+```bash
+curl -X POST http://localhost:8001/full \
+  -F "file=@resume.pdf"
+```
+
+Same JSON as `/resume` but with `personal_info.photo_path` populated.
 
 ### `GET /health`
 
@@ -98,33 +132,65 @@ curl http://localhost:8001/queue/status
 # → {"max_concurrent":1,"active":0,"waiting":0}
 ```
 
+### Error Codes
+
+| Status | Cause |
+|--------|-------|
+| 400 | Missing file, wrong format, or invalid `?layout=` value |
+| 404 | No photo found in PDF (`/photo` only) |
+| 422 | LLM extraction or JSON parsing failure |
+| 500 | Internal server error |
+
+## Switching Backends
+
+All backends speak the OpenAI `/chat/completions` protocol — change one line:
+
+```env
+LLM_BACKEND=openrouter   # cloud: qwen3, claude, gpt-4o-mini
+LLM_BACKEND=ollama       # local: qwen3:1.7b, llama3.2:3b
+LLM_BACKEND=lmstudio     # local: any model in LM Studio
+```
+
 ## PDF Parse Modes
 
-| Mode | Behavior | Use case |
-|------|----------|----------|
-| `auto` (default) | Native extraction, fall back to OCR if output sparse | **Recommended** — handles text + image PDFs |
-| `native` | pymupdf4llm text-layer only | Fast; digitally-created PDFs |
-| `ocr` | Always OCR via ocrmypdf | Scanned, image-heavy, multi-column |
+| Mode | Behavior | Speed | Use case |
+|------|----------|-------|----------|
+| `auto` (default) | Native + 2-column detection, OCR fallback if sparse | Fast | 90% of resumes |
+| `native` | pymupdf4llm only | Fastest | Text-based PDFs |
+| `ocr` | Always OCR first | Slow | Scanned/image PDFs |
+| `hybrid` | Native + OCR merge (best quality) | Slowest | Complex layouts |
 
-Set via `PDF_PARSE_MODE` in `.env`.
+Set via `PDF_PARSE_MODE` in `.env`. Layout override via `?layout=auto|single` query param.
+
+## Photo Extraction
+
+Automatically detects the largest portrait-ish image on page 1 (>20KB, aspect 0.5–1.5) and saves it as the applicant photo. Photos are served via `/photos/{filename}`.
+
+```env
+PHOTO_ENABLED=true        # toggle on/off
+PHOTO_DIR=data/photos     # storage (gitignored)
+```
+
+Photo size per CV: ~20-100 KB.
 
 ## QR Code Handling
 
-QR codes in PDFs (LinkedIn, GitHub, portfolio, vCard) are automatically decoded via `pyzbar` and appended to the Markdown before LLM extraction. Enable artifact saving to keep QR images:
+QR codes (LinkedIn, GitHub, portfolio, vCard) are automatically decoded via `pyzbar` and fed into the LLM extraction.
 
 ```env
-QR_SAVE_ARTIFACTS=true   # saves to data/qr_artifacts/
+QR_SCAN_ENABLED=true
+QR_SAVE_ARTIFACTS=false    # set true to save QR images
 ```
 
 ## Output Normalization
 
-All extracted JSON passes through `src/normalizer.py` for consistent output:
+All extracted JSON passes through `src/normalizer.py`:
 
 - **Dates** → `YYYY-MM` (`"2024"` → `"2024-01"`, `"Jan 2024"` → `"2024-01"`)
 - **`end_date`** preserves `"Present"` for ongoing roles
-- **`graduation_year`** → `YYYY` only (no month suffix)
+- **`graduation_year`** → `YYYY` only
 - **Strings** trimmed; empty strings → `null`
-- **Skills & certifications** deduplicated and sorted alphabetically
+- **Skills & certifications** deduplicated and sorted
 
 ## Output Schema
 
@@ -136,7 +202,8 @@ All extracted JSON passes through `src/normalizer.py` for consistent output:
     "phone": "string | null",
     "location": "string | null",
     "linkedin": "string | null",
-    "website": "string | null"
+    "website": "string | null",
+    "photo_path": "string | null"
   },
   "summary": "string | null",
   "skills": ["string"],
@@ -171,6 +238,30 @@ All extracted JSON passes through `src/normalizer.py` for consistent output:
 }
 ```
 
+## Storage Estimates
+
+For planning database capacity with 20,000 CVs:
+
+| What | Per CV | × 20,000 |
+|------|--------|----------|
+| JSON only | ~6 KB | ~120 MB |
+| JSON + photo | ~50 KB | ~1 GB |
+| JSON + photo + PDF | ~250 KB | ~5 GB |
+
+JSON compresses well — gzipped, ~2-3 KB per CV.
+
+## Batch Testing
+
+```bash
+# Extract all PDFs in a directory:
+python test_runner.py --dir data/input
+
+# With ground truth comparison:
+python test_runner.py --dir data/test_pdfs --ground-truth data/ground_truth
+```
+
+Results saved to `data/test_results/` as JSON + CSV with per-section accuracy scores.
+
 ## Configuration Reference
 
 | Variable | Default | Description |
@@ -185,69 +276,67 @@ All extracted JSON passes through `src/normalizer.py` for consistent output:
 | `OPENROUTER_MAX_TOKENS` | `8192` | Max output tokens |
 | **Ollama** | | |
 | `OLLAMA_BASE_URL` | `http://localhost:11434/v1` | Ollama endpoint |
-| `OLLAMA_MODEL` | `qwen3:1.7b` | Model name (`ollama list`) |
+| `OLLAMA_MODEL` | `qwen3:1.7b` | Model name |
 | `OLLAMA_TIMEOUT` | `120` | Request timeout |
 | `OLLAMA_TEMPERATURE` | `0.0` | LLM temperature |
 | `OLLAMA_MAX_TOKENS` | `8192` | Max output tokens |
 | **LM Studio** | | |
 | `LM_STUDIO_BASE_URL` | `http://localhost:1234/v1` | LM Studio endpoint |
-| `LM_STUDIO_MODEL` | `gemma-3-4b-it` | Model loaded in LM Studio |
+| `LM_STUDIO_MODEL` | `gemma-3-4b-it` | Model name |
 | `LM_STUDIO_TIMEOUT` | `120` | Request timeout |
 | `LM_STUDIO_TEMPERATURE` | `0.0` | LLM temperature |
 | `LM_STUDIO_MAX_TOKENS` | `8192` | Max output tokens |
 | **General** | | |
-| `LLM_REASONING_ENABLED` | `false` | Enable thinking phase (Qwen 3, R1) |
-| `LLM_MAX_INPUT_CHARS` | `200000` | Max resume chars sent to LLM |
-| `LLM_MAX_RETRIES` | `3` | Retries on 429/5xx errors |
-| `LLM_RETRY_BACKOFF` | `2.0` | Delay multiplier per retry |
+| `LLM_REASONING_ENABLED` | `false` | Enable thinking phase |
+| `LLM_MAX_INPUT_CHARS` | `200000` | Max resume chars to LLM |
+| `LLM_MAX_RETRIES` | `3` | Retries on 429/5xx |
+| `LLM_RETRY_BACKOFF` | `2.0` | Backoff multiplier |
 | `LLM_MAX_CONCURRENT` | `1` | Max concurrent LLM calls |
 | **PDF** | | |
-| `PDF_PARSE_MODE` | `auto` | `auto`, `native`, or `ocr` |
+| `PDF_PARSE_MODE` | `auto` | `auto`, `native`, `ocr`, `hybrid` |
+| `PDF_PAGE_LAYOUT` | `auto` | `auto` or `single` |
 | `OCR_LANGUAGE` | `eng` | Tesseract language code |
-| `OCR_MIN_CHARS` | `300` | Fallback threshold for `auto` |
+| `OCR_MIN_CHARS` | `300` | Fallback threshold |
 | **QR** | | |
 | `QR_SCAN_ENABLED` | `true` | Scan PDF for QR codes |
 | `QR_SAVE_ARTIFACTS` | `false` | Save QR images to disk |
-
-## OCR for Scanned PDFs
-
-For image-based PDFs, force OCR mode:
-
-```env
-PDF_PARSE_MODE=ocr
-OCR_LANGUAGE=msa+eng          # Malay + English
-```
-
-Requires `ocrmypdf` + system install of [Tesseract](https://github.com/UB-Mannheim/tesseract/wiki).
+| **Photo** | | |
+| `PHOTO_ENABLED` | `true` | Extract applicant photo |
+| `PHOTO_DIR` | `data/photos` | Photo storage path |
 
 ## Project Structure
 
 ```
 ocr-pipeline/
 ├── main.py                    # CLI batch processor
-├── api.py                     # FastAPI server (POST /resume/upload)
+├── api.py                     # FastAPI: /resume, /photo, /full
+├── test_runner.py             # Batch test + accuracy scoring
 ├── config.py                  # Env loading, backend resolution
 ├── requirements.txt
 ├── .env.example
 ├── data/
 │   ├── input/                 # Drop resumes here
-│   └── output/                # JSON results
+│   ├── output/                # JSON results
+│   ├── photos/                # Extracted applicant photos
+│   └── test_results/          # Batch test reports
 ├── src/
 │   ├── models.py              # Pydantic schemas
-│   ├── pdf_parser.py          # PDF → Markdown (multi-strategy)
-│   ├── text_processor.py      # TXT + layout-aware cleaning
-│   ├── llm_extractor.py       # LLM API call + retry logic
-│   ├── qr_decoder.py          # QR code detection + decoding
+│   ├── pdf_parser.py          # PDF → Markdown (auto/native/ocr/hybrid)
+│   ├── text_processor.py      # Markdown restructuring + cleaning
+│   ├── llm_extractor.py       # LLM API + retry logic
+│   ├── qr_decoder.py          # QR code detection
+│   ├── photo_extractor.py     # Applicant photo extraction
 │   └── normalizer.py          # Date & output normalization
 ├── prompts/
-│   └── resume_extraction.md   # System prompt
+│   └── resume_extraction.md   # LLM system prompt
 └── docs/
     ├── architecture.md
     ├── flow.md
     ├── rules.md
-    └── standard.md
+    ├── standard.md
+    └── api-guide.md
 ```
 
 ## Debugging
 
-Debug output (`[DEBUG]`, `[ERROR]`, `[RETRY]`, `[QR]`, `[AUTO]`, `[OCR]`) prints to stdout. Remove `print()` calls in `src/llm_extractor.py` for production.
+Debug output (`[DEBUG]`, `[ERROR]`, `[RETRY]`, `[QR]`, `[PHOTO]`, `[AUTO]`, `[HYBRID]`, `[OCR]`) prints to stdout. Remove `print()` calls for production.

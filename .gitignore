@@ -27,3 +27,6 @@ Thumbs.db
 # Project
 temp_uploads/
 resume/
+data/input/*
+!data/input/.gitkeep
+data/output/

@@ -5,9 +5,12 @@ These rules define how the LLM should extract resume data. They live in `prompts
 ## Core Principles
 
 ### 1. Never Alter Proper Nouns
-Copy names, company names, project names, and institutions **exactly** as written — character for character. Do not drop middle names, fix perceived typos, or rephrase.
+Copy names, company names, project names, and institutions **exactly** as written — character for character, letter for letter. Do not drop middle names, do not "fix" perceived typos, do not substitute similar-looking letters (e.g., "u" for "e"). Every character must match the source.
 
-### 2. Extract All Description Bullets
+### 2. Do Not Leak Bullets Between Entries
+Each experience entry and project entry must contain ONLY the description bullets that belong to that specific role. Do not copy bullets from other roles, projects, or sections into an entry's description. The first job should not absorb every bullet in the CV.
+
+### 3. Extract All Description Bullets
 Every bullet point under a role or project must appear in the `description` array. Do not skip, merge, or summarize any bullet. The normalizer removes empty strings, so the prompt must not pre-filter.
 
 ### 3. Extract Full Summary Verbatim
@@ -24,11 +27,11 @@ Do not truncate, paraphrase, or omit any sentences from the summary section.
 ### 6. Do Not Hallucinate Education
 If there is no dedicated "Education" section with a real degree name, leave `education: []`. A final-year project description is NOT an education entry.
 
-### 7. Be Thorough with Skills
-Extract every technical skill mentioned — include libraries, frameworks, databases, tools, and methodologies. Preserve parenthetical context like `"REST API (design, integration, deployment)"`. Do not abbreviate.
+### 7. Skills — Only From Explicit Skills Section
+Extract skills ONLY from a dedicated "Skills" section. Do NOT infer or fabricate skills from job descriptions, project details, or bullet points. If there is no explicit Skills section, return `skills: []`. Preserve parenthetical context like `"REST API (design, integration, deployment)"` when present.
 
-### 8. Dates — Any Format Works
-Output dates however the resume presents them. The normalizer will convert all formats to `YYYY-MM`. Acceptable inputs: `"2024"`, `"2024-01"`, `"Jan 2024"`, `"Present"`.
+### 8. Dates — Null If Missing
+Output dates if explicitly stated (any format — normalizer converts to `YYYY-MM`). If a date is not present on the resume, use `null`. Never guess or fabricate a date. A missing date is better than a wrong date.
 
 ### 9. Output Only Valid JSON
 No markdown fences, no extra commentary. Just the JSON object.

@@ -19,16 +19,26 @@ def pdf_to_markdown(pdf_path: str | Path) -> str:
     if PDF_PARSE_MODE == "ocr":
         md = _ocr_then_parse(pdf_path, OCR_LANGUAGE)
     elif PDF_PARSE_MODE == "native":
-        md = _native_parse(pdf_path)
+        md = _native_parse(pdf_path, PDF_PAGE_LAYOUT)
     else:
-        # auto mode: try native, fall back to OCR if output is too sparse
-        md = _native_parse(pdf_path)
-        word_count = len(md.split())
-        if len(md.strip()) < OCR_MIN_CHARS or word_count < 50:
-            print(f"[AUTO] Native parse yielded {len(md)} chars / {word_count} words — falling back to OCR")
-            md = _ocr_then_parse(pdf_path, OCR_LANGUAGE)
+        # auto mode: try both layouts, pick best word count, fall back to OCR if sparse
+        md_auto = _native_parse(pdf_path, "auto")
+        md_single = _native_parse(pdf_path, "single")
+
+        wc_auto = len(md_auto.split())
+        wc_single = len(md_single.split())
+
+        if wc_single > wc_auto * 1.15:
+            # single layout produced 15%+ more words — likely a 2-column resume
+            md = md_single
+            print(f"[AUTO] Detected multi-column layout (single={wc_single} vs auto={wc_auto} words) → using single")
         else:
-            print(f"[AUTO] Native parse OK ({len(md)} chars, {word_count} words)")
+            md = md_auto
+            print(f"[AUTO] Single-column layout (auto={wc_auto} words)")
+
+        if len(md.strip()) < OCR_MIN_CHARS or len(md.split()) < 50:
+            print(f"[AUTO] Parse too sparse ({len(md)} chars) — falling back to OCR")
+            md = _ocr_then_parse(pdf_path, OCR_LANGUAGE)
 
     # ── QR code scanning ─────────────────────────────────────
     if QR_SCAN_ENABLED:
@@ -45,9 +55,9 @@ def pdf_to_markdown(pdf_path: str | Path) -> str:
     return md
 
 
-def _native_parse(pdf_path: Path) -> str:
+def _native_parse(pdf_path: Path, page_layout: str = "auto") -> str:
     """Convert PDF to Markdown using pymupdf4llm (text layer extraction)."""
-    return pymupdf4llm.to_markdown(str(pdf_path))
+    return pymupdf4llm.to_markdown(str(pdf_path), page_layout=page_layout)
 
 
 def _ocr_then_parse(pdf_path: Path, language: str = "eng") -> str:
@@ -61,10 +71,8 @@ def _ocr_then_parse(pdf_path: Path, language: str = "eng") -> str:
         str(ocr_path),
         language=language,
         deskew=True,
-        clean=True,
-        optimize=1,
     )
-    md = _native_parse(ocr_path)
+    md = _native_parse(ocr_path, PDF_PAGE_LAYOUT)
     # Clean up the temporary OCR'd PDF
     ocr_path.unlink(missing_ok=True)
     return md

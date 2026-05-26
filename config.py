@@ -75,6 +75,12 @@ PDF_PARSE_MODE = os.getenv("PDF_PARSE_MODE", "auto")
 OCR_LANGUAGE = os.getenv("OCR_LANGUAGE", "eng")     # tesseract lang code
 OCR_MIN_CHARS = int(os.getenv("OCR_MIN_CHARS", "300"))  # fallback threshold
 
+# ── PDF Layout ──────────────────────────────────────────────
+# Controls text extraction order for multi-column resumes.
+# auto   = let pymupdf decide (default — may interleave columns)
+# single = force single-column ordering (better for 2-column resumes)
+PDF_PAGE_LAYOUT = os.getenv("PDF_PAGE_LAYOUT", "auto")
+
 # ── QR Code Scanning ────────────────────────────────────────
 QR_SCAN_ENABLED = os.getenv("QR_SCAN_ENABLED", "true").lower() == "true"
 QR_SAVE_ARTIFACTS = os.getenv("QR_SAVE_ARTIFACTS", "false").lower() == "true"

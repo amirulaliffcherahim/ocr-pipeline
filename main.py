@@ -11,7 +11,7 @@ def process_file(file_path: Path):
     print(f"Processing: {file_path.name}")
 
     if file_path.suffix.lower() == ".pdf":
-        md_text = pdf_to_markdown(file_path)
+        md_text, photo_path = pdf_to_markdown(file_path)
     elif file_path.suffix.lower() == ".txt":
         md_text = read_text_file(file_path)
     else:
@@ -22,6 +22,8 @@ def process_file(file_path: Path):
     result = extract_to_json(clean_md)
 
     output_path = OUTPUT_DIR / f"{file_path.stem}.json"
+    if photo_path:
+        result.setdefault("personal_info", {})["photo_path"] = photo_path
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(result, f, indent=2, ensure_ascii=False)
 

@@ -68,9 +68,10 @@ else:  # openrouter
 LLM_MAX_INPUT_CHARS = int(os.getenv("LLM_MAX_INPUT_CHARS", "200000"))
 
 # ── PDF Parsing ─────────────────────────────────────────────
-# auto  = try native first, fall back to OCR if output looks empty/scanned
-# native = pymupdf4llm only (fast, good for text-based PDFs)
-# ocr    = always OCR first (slow, best for scanned/image-heavy PDFs)
+# auto   = try native first, fall back to OCR if sparse
+# native = pymupdf4llm only (fast, text-based PDFs)
+# ocr    = always OCR first (slow, scanned/image PDFs)
+# hybrid = run native + OCR, merge best of both (best quality)
 PDF_PARSE_MODE = os.getenv("PDF_PARSE_MODE", "auto")
 OCR_LANGUAGE = os.getenv("OCR_LANGUAGE", "eng")     # tesseract lang code
 OCR_MIN_CHARS = int(os.getenv("OCR_MIN_CHARS", "300"))  # fallback threshold
@@ -84,6 +85,10 @@ PDF_PAGE_LAYOUT = os.getenv("PDF_PAGE_LAYOUT", "auto")
 # ── QR Code Scanning ────────────────────────────────────────
 QR_SCAN_ENABLED = os.getenv("QR_SCAN_ENABLED", "true").lower() == "true"
 QR_SAVE_ARTIFACTS = os.getenv("QR_SAVE_ARTIFACTS", "false").lower() == "true"
+
+# ── Photo Extraction ────────────────────────────────────────
+PHOTO_ENABLED = os.getenv("PHOTO_ENABLED", "true").lower() == "true"
+PHOTO_DIR = BASE_DIR / os.getenv("PHOTO_DIR", "data/photos")
 
 # ── Rate Limiting & Retry ───────────────────────────────────
 LLM_MAX_RETRIES = int(os.getenv("LLM_MAX_RETRIES", "3"))

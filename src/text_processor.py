@@ -1,6 +1,8 @@
 import re
 from pathlib import Path
 
+from config import TEXT_RESTRUCTURE_ENABLED
+
 # Unicode bullet characters commonly found in PDFs
 _BULLET_CHARS = "\u2022\u25e6\u25aa\u25cb\u25cf\u2756\u2043\u2023\u25b8\u25c6\u25a0\u2794\u27a2\u2714\u2713"
 _BULLET_RE = re.compile(f"^[{_BULLET_CHARS}]\\s*")
@@ -67,9 +69,11 @@ def clean_markdown(md_text: str) -> str:
 
 def _restructure_markdown(md_text: str) -> str:
     """
-    Fix critical pymupdf4llm artifacts: extract misplaced skills table,
-    remove disclaimer noise, clean page-break garbage.
+    Fix known pymupdf4llm artifacts from specific resume templates.
+    Only runs when TEXT_RESTRUCTURE_ENABLED=true (disabled by default).
     """
+    if not TEXT_RESTRUCTURE_ENABLED:
+        return md_text
     # 1. Extract skills table and remove it from wherever it appears
     skills_block = ""
     skills_match = _SKILLS_TABLE_RE.search(md_text)

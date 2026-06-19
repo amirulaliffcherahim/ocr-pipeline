@@ -1,6 +1,7 @@
 import asyncio
 import tempfile
 from pathlib import Path
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.responses import JSONResponse
@@ -17,7 +18,35 @@ app = FastAPI(title="Resume Parser API", version="1.0.0")
 PHOTO_DIR.mkdir(parents=True, exist_ok=True)
 app.mount("/photos", StaticFiles(directory=str(PHOTO_DIR)), name="photos")
 
-_llm_semaphore = asyncio.Semaphore(LLM_MAX_CONCURRENT)
+
+class LLMQueue:
+    """Track active and waiting LLM requests."""
+
+    def __init__(self, max_concurrent: int):
+        self._semaphore = asyncio.Semaphore(max_concurrent)
+        self.active = 0
+        self.waiting = 0
+
+    @asynccontextmanager
+    async def acquire(self):
+        self.waiting += 1
+        acquired = False
+        try:
+            async with self._semaphore:
+                acquired = True
+                self.waiting -= 1
+                self.active += 1
+                try:
+                    yield
+                finally:
+                    self.active -= 1
+        except Exception:
+            if not acquired:
+                self.waiting -= 1
+            raise
+
+
+_llm_queue = LLMQueue(LLM_MAX_CONCURRENT)
 
 
 # ── Shared helpers ───────────────────────────────────────────
@@ -40,11 +69,11 @@ def _validate_pdf(file: UploadFile) -> str:
     return Path(file.filename).stem
 
 
-def _parse_and_extract(tmp_path: Path, layout: str | None = None) -> dict:
-    """Parse PDF to Markdown, clean, LLM extract. Returns dict."""
-    md_text, _ = pdf_to_markdown(tmp_path, layout_override=layout)
+def _parse_and_extract(tmp_path: Path, layout: str | None = None) -> tuple[dict, str | None]:
+    """Parse PDF to Markdown, clean, LLM extract. Returns (dict, photo_path)."""
+    md_text, photo_path = pdf_to_markdown(tmp_path, layout_override=layout)
     clean_md = clean_markdown(md_text)
-    return extract_to_json(clean_md)
+    return extract_to_json(clean_md), photo_path
 
 
 # ── Endpoints ────────────────────────────────────────────────
@@ -58,8 +87,8 @@ async def resume_only(file: UploadFile = File(...), layout: str | None = None):
     _validate_pdf(file)
     tmp_path = await _save_temp(file, ".pdf")
     try:
-        async with _llm_semaphore:
-            result = _parse_and_extract(tmp_path, layout)
+        async with _llm_queue.acquire():
+            result, _ = await asyncio.to_thread(_parse_and_extract, tmp_path, layout)
         if isinstance(result, dict) and "error" in result:
             raise HTTPException(422, result["error"])
         return JSONResponse(content=result)
@@ -76,7 +105,7 @@ async def photo_only(file: UploadFile = File(...)):
     _validate_pdf(file)
     tmp_path = await _save_temp(file, ".pdf")
     try:
-        photo_path = extract_photo(tmp_path, PHOTO_DIR)
+        photo_path = await asyncio.to_thread(extract_photo, tmp_path, PHOTO_DIR)
         if not photo_path:
             raise HTTPException(404, "No photo found in this PDF")
         return JSONResponse({"photo_path": photo_path})
@@ -93,16 +122,14 @@ async def full_extract(file: UploadFile = File(...), layout: str | None = None):
     _validate_pdf(file)
     tmp_path = await _save_temp(file, ".pdf")
     try:
-        async with _llm_semaphore:
-            result = _parse_and_extract(tmp_path, layout)
+        async with _llm_queue.acquire():
+            result, photo_path = await asyncio.to_thread(_parse_and_extract, tmp_path, layout)
 
         if isinstance(result, dict) and "error" in result:
             raise HTTPException(422, result["error"])
 
-        if PHOTO_ENABLED:
-            photo_path = extract_photo(tmp_path, PHOTO_DIR)
-            if photo_path:
-                result.setdefault("personal_info", {})["photo_path"] = photo_path
+        if PHOTO_ENABLED and photo_path:
+            result.setdefault("personal_info", {})["photo_path"] = photo_path
 
         return JSONResponse(content=result)
     finally:
@@ -116,9 +143,8 @@ async def health():
 
 @app.get("/queue/status")
 async def queue_status():
-    waiting = max(0, LLM_MAX_CONCURRENT - _llm_semaphore._value)
     return {
         "max_concurrent": LLM_MAX_CONCURRENT,
-        "active": waiting,
-        "waiting": max(0, waiting - 1) if waiting > 0 else 0,
+        "active": _llm_queue.active,
+        "waiting": _llm_queue.waiting,
     }

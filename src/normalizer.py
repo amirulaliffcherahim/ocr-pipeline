@@ -24,7 +24,7 @@ _MONTH_MAP = {
     "dec": "12", "december": "12",
 }
 
-_DATE_RANGE_RE = re.compile(r"(\d{4})\s*[-–—to]+\s*(\d{4}|Present)", re.IGNORECASE)
+_DATE_RANGE_RE = re.compile(r"(\d{4})\s*(?:[-–—]|to)\s*(\d{4}|Present)", re.IGNORECASE)
 _NAMED_MONTH_RE = re.compile(
     r"(" + "|".join(_MONTH_MAP.keys()) + r")\.?\s*,?\s*(\d{4})", re.IGNORECASE
 )

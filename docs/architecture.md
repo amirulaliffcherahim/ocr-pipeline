@@ -67,9 +67,9 @@ The pipeline follows a four-stage linear architecture: Parse → Clean → Extra
 - `field_validator(mode='before')` coercers for int→str on date/year fields
 
 ### `api.py` — FastAPI Server
-- `POST /resume/upload` — accepts PDF/TXT, returns JSON
+- `POST /resume` — accepts PDF, returns JSON (layout override via `?layout=single`)
 - `GET /health` — liveness check
-- `GET /queue/status` — concurrency semaphore state
+- `GET /queue/status` — concurrency queue state (active + waiting counts)
 - Temp files deleted in `finally` block
 
 ### `main.py` — CLI Batch Processor
@@ -88,4 +88,4 @@ The pipeline follows a four-stage linear architecture: Parse → Clean → Extra
 | `auto` parse mode with OCR fallback | Handles text + scanned PDFs transparently |
 | System prompt as external `.md` file | Iterate on prompts without touching code |
 | Synchronous `requests` | Resume count is low; simplicity > throughput |
-| In-process semaphore (not Redis) | Single-server deployments; no external dependency |
+| In-process LLMQueue (not Redis) | Single-server deployments; no external dependency |

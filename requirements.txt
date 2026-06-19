@@ -9,3 +9,4 @@ python-multipart
 ocrmypdf          # Optional: for scanned PDFs
 pillow            # Optional
 pyzbar            # QR code decoding from PDF images
+pytest            # Testing

@@ -133,7 +133,7 @@ Normalization
 
 ## Concurrency Model
 
-- API: `asyncio.Semaphore(LLM_MAX_CONCURRENT)` limits concurrent LLM calls (default 1)
+- API: `LLMQueue` (asyncio.Semaphore-based) limits concurrent LLM calls (default 1)
 - Additional requests wait on the semaphore (not rejected)
 - `GET /queue/status` shows active/waiting counts
 - CLI (`main.py`): sequential, single-threaded

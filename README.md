@@ -288,6 +288,7 @@ Results saved to `data/test_results/` as JSON + CSV with per-section accuracy sc
 | `LM_STUDIO_MAX_TOKENS` | `8192` | Max output tokens |
 | **General** | | |
 | `LLM_REASONING_ENABLED` | `false` | Enable thinking phase |
+| `LLM_JSON_MODE` | `false` | Request `response_format: json_object` |
 | `LLM_MAX_INPUT_CHARS` | `200000` | Max resume chars to LLM |
 | `LLM_MAX_RETRIES` | `3` | Retries on 429/5xx |
 | `LLM_RETRY_BACKOFF` | `2.0` | Backoff multiplier |
@@ -303,6 +304,8 @@ Results saved to `data/test_results/` as JSON + CSV with per-section accuracy sc
 | **Photo** | | |
 | `PHOTO_ENABLED` | `true` | Extract applicant photo |
 | `PHOTO_DIR` | `data/photos` | Photo storage path |
+| **Text** | | |
+| `TEXT_RESTRUCTURE_ENABLED` | `false` | Fix artifacts from specific resume templates |
 
 ## Project Structure
 
@@ -329,6 +332,11 @@ ocr-pipeline/
 │   └── normalizer.py          # Date & output normalization
 ├── prompts/
 │   └── resume_extraction.md   # LLM system prompt
+├── tests/
+│   ├── test_normalizer.py
+│   ├── test_models.py
+│   ├── test_text_processor.py
+│   └── test_llm_extractor.py
 └── docs/
     ├── architecture.md
     ├── flow.md
@@ -339,4 +347,15 @@ ocr-pipeline/
 
 ## Debugging
 
-Debug output (`[DEBUG]`, `[ERROR]`, `[RETRY]`, `[QR]`, `[PHOTO]`, `[AUTO]`, `[HYBRID]`, `[OCR]`) prints to stdout. Remove `print()` calls for production.
+The pipeline uses Python's `logging` module. Log output includes structured messages with log levels:
+- `DEBUG` — raw LLM responses, parsed JSON keys
+- `INFO` — processing progress, QR/photo extraction, parse mode selection
+- `WARNING` — retry attempts, OCR fallbacks, unsupported formats
+- `ERROR` — LLM failures, JSON parse errors, validation errors
+
+Set log level via `LOG_LEVEL` env var:
+```env
+LOG_LEVEL=INFO   # default: DEBUG
+```
+
+Third-party loggers (`urllib3`, `requests`) are silenced to WARNING by default.

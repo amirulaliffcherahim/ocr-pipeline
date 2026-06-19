@@ -7,10 +7,13 @@ headshot based on size, aspect ratio, and position on the page.
 from __future__ import annotations
 
 import io
+import logging
 from pathlib import Path
 
 import fitz  # pymupdf
 from PIL import Image
+
+logger = logging.getLogger(__name__)
 
 
 def extract_photo(pdf_path: str | Path, output_dir: str | Path) -> str | None:
@@ -86,5 +89,5 @@ def extract_photo(pdf_path: str | Path, output_dir: str | Path) -> str | None:
     with open(photo_path, "wb") as f:
         f.write(best_bytes)
 
-    print(f"[PHOTO] Extracted: {photo_name} ({len(best_bytes) / 1024:.0f} KB)")
+    logger.info("Extracted: %s (%.0f KB)", photo_name, len(best_bytes) / 1024)
     return f"photos/{photo_name}"

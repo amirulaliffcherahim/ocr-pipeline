@@ -40,6 +40,9 @@ OLLAMA_MAX_TOKENS = int(os.getenv("OLLAMA_MAX_TOKENS", "8192"))
 # ── Reasoning (for Qwen 3, DeepSeek-R1, etc.) ───────────────
 LLM_REASONING_ENABLED = os.getenv("LLM_REASONING_ENABLED", "false").lower() == "true"
 
+# ── JSON mode (for APIs that support structured output) ─────
+LLM_JSON_MODE = os.getenv("LLM_JSON_MODE", "false").lower() == "true"
+
 # Resolve active backend
 if LLM_BACKEND == "ollama":
     LLM_BASE_URL = OLLAMA_BASE_URL
@@ -94,3 +97,24 @@ PHOTO_DIR = BASE_DIR / os.getenv("PHOTO_DIR", "data/photos")
 LLM_MAX_RETRIES = int(os.getenv("LLM_MAX_RETRIES", "3"))
 LLM_RETRY_BACKOFF = float(os.getenv("LLM_RETRY_BACKOFF", "2.0"))   # multiplier
 LLM_MAX_CONCURRENT = int(os.getenv("LLM_MAX_CONCURRENT", "1"))
+
+# ── Text Processor — Resume Format Cleaning ─────────────────
+# These options fix artifacts from specific resume templates.
+# Disabled by default — enable only if your resumes use these formats.
+TEXT_RESTRUCTURE_ENABLED = os.getenv("TEXT_RESTRUCTURE_ENABLED", "false").lower() == "true"
+
+# ── Logging ─────────────────────────────────────────────────
+import logging
+
+def setup_logging():
+    """Configure structured logging for the OCR pipeline."""
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format="%(asctime)s [%(levelname)-5s] %(name)s: %(message)s",
+        datefmt="%H:%M:%S",
+    )
+    # Silence noisy third-party loggers
+    logging.getLogger("urllib3").setLevel(logging.WARNING)
+    logging.getLogger("requests").setLevel(logging.WARNING)
+
+setup_logging()

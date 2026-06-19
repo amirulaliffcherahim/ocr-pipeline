@@ -1,6 +1,10 @@
 import pymupdf4llm
+import logging
 import re
 from pathlib import Path
+from config import PDF_PAGE_LAYOUT
+
+logger = logging.getLogger(__name__)
 
 
 def pdf_to_markdown(pdf_path: str | Path, layout_override: str | None = None) -> str:
@@ -37,7 +41,7 @@ def pdf_to_markdown(pdf_path: str | Path, layout_override: str | None = None) ->
         from src.qr_decoder import extract_qr_from_pdf, qr_results_to_markdown
         qr_results = extract_qr_from_pdf(pdf_path, save_artifacts=QR_SAVE_ARTIFACTS)
         if qr_results:
-            print(f"[QR] Found {len(qr_results)} QR code(s)")
+            logger.info("Found %d QR code(s)", len(qr_results))
             md += "\n" + qr_results_to_markdown(qr_results)
 
     # ── Photo extraction ────────────────────────────────────
@@ -55,7 +59,7 @@ def _auto_parse(pdf_path: Path, ocr_lang: str, min_chars: int, layout_override: 
     """Try both layouts; fall back to OCR if sparse."""
     if layout_override:
         md = _native_parse(pdf_path, layout_override)
-        print(f"[AUTO] Layout override → {layout_override}")
+        logger.info("Layout override → %s", layout_override)
     else:
         md_auto = _native_parse(pdf_path, "auto")
         md_single = _native_parse(pdf_path, "single")
@@ -66,13 +70,13 @@ def _auto_parse(pdf_path: Path, ocr_lang: str, min_chars: int, layout_override: 
 
         if h_single > h_auto and wc_single > wc_auto * 1.30:
             md = md_single
-            print(f"[AUTO] Multi-column detected (single={wc_single} vs auto={wc_auto} words) → single")
+            logger.info("Multi-column detected (single=%d vs auto=%d words) → single", wc_single, wc_auto)
         else:
             md = md_auto
-            print(f"[AUTO] Using auto layout ({wc_auto} words)")
+            logger.info("Using auto layout (%d words)", wc_auto)
 
     if len(md.strip()) < min_chars or len(md.split()) < 50:
-        print(f"[AUTO] Parse too sparse ({len(md)} chars) — falling back to OCR")
+        logger.info("Parse too sparse (%d chars) — falling back to OCR", len(md.strip()))
         md = _ocr_then_parse(pdf_path, ocr_lang, PDF_PAGE_LAYOUT)
 
     return md
@@ -87,7 +91,7 @@ def _hybrid_parse(pdf_path: Path, ocr_lang: str, min_chars: int) -> str:
     h_single = _count_section_headers(md_single)
     if h_single > h_auto and len(md_single.split()) > len(md_native.split()) * 1.30:
         md_native = md_single
-        print(f"[HYBRID] Multi-column detected — using single layout")
+        logger.info("Multi-column detected — using single layout")
 
     md_ocr = _ocr_then_parse(pdf_path, ocr_lang, "auto")
     wc_native = len(md_native.split())
@@ -95,14 +99,14 @@ def _hybrid_parse(pdf_path: Path, ocr_lang: str, min_chars: int) -> str:
 
     if wc_ocr > wc_native * 1.30:
         # OCR found significantly more content — use it as base, preserving native tables
-        print(f"[HYBRID] OCR richer ({wc_ocr} vs {wc_native} words) — merging native tables into OCR")
+        logger.info("OCR richer (%d vs %d words) — merging native tables into OCR", wc_ocr, wc_native)
         md = _merge_native_tables(md_ocr, md_native)
     else:
-        print(f"[HYBRID] Native sufficient ({wc_native} words)")
+        logger.info("Native sufficient (%d words)", wc_native)
         md = md_native
 
     if len(md.strip()) < min_chars or len(md.split()) < 50:
-        print(f"[HYBRID] Output still sparse — using raw OCR")
+        logger.info("Output still sparse — using raw OCR")
         md = md_ocr
 
     return md
@@ -159,17 +163,17 @@ def _ocr_then_parse(pdf_path: Path, language: str = "eng", page_layout: str = "a
     try:
         import ocrmypdf
     except ImportError:
-        print("[OCR] ocrmypdf not installed — falling back to native")
+        logger.warning("ocrmypdf not installed — falling back to native")
         return _native_parse(pdf_path, page_layout)
 
     ocr_path = pdf_path.with_name(f"{pdf_path.stem}_ocr{pdf_path.suffix}")
     try:
-        print(f"[OCR] Running ocrmypdf (lang={language}) …")
+        logger.info("Running ocrmypdf (lang=%s) …", language)
         ocrmypdf.ocr(str(pdf_path), str(ocr_path), language=language, deskew=True)
         md = _native_parse(ocr_path, page_layout)
         return md
     except Exception as e:
-        print(f"[OCR] Failed: {e} — falling back to native")
+        logger.warning("OCR failed: %s — falling back to native", e)
         return _native_parse(pdf_path, page_layout)
     finally:
         ocr_path.unlink(missing_ok=True)

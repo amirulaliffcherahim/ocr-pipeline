@@ -48,17 +48,30 @@ class Project(BaseModel):
 class Education(BaseModel):
     institution: str
     degree: str
-    field: Optional[str] = None
     graduation_year: Optional[str] = None
+    result: Optional[str] = None
 
     _coerce_year = field_validator("graduation_year", mode="before")(_coerce_to_str)
+    _coerce_result = field_validator("result", mode="before")(_coerce_to_str)
+
+
+class Certification(BaseModel):
+    name: str
+    institute: Optional[str] = None
+    validity_start: Optional[str] = None
+    validity_end: Optional[str] = None
+    level: Optional[str] = None
+
+    _coerce_validity_start = field_validator("validity_start", mode="before")(_coerce_to_str)
+    _coerce_validity_end = field_validator("validity_end", mode="before")(_coerce_to_str)
 
 
 class ResumeData(BaseModel):
     personal_info: PersonalInfo
     summary: Optional[str] = None
     skills: List[str] = Field(default_factory=list)
+    tags: List[str] = Field(default_factory=list)
     experience: List[Experience] = Field(default_factory=list)
     projects: List[Project] = Field(default_factory=list)
     education: List[Education] = Field(default_factory=list)
-    certifications: List[str] = Field(default_factory=list)
+    certifications: List[Certification] = Field(default_factory=list)

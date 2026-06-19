@@ -124,14 +124,31 @@ def normalize_resume(data: dict) -> dict:
     for edu in data.get("education") or []:
         edu["institution"] = _clean_str(edu.get("institution", "")) or ""
         edu["degree"] = _clean_str(edu.get("degree", "")) or ""
-        edu["field"] = _clean_str(edu.get("field"))
+        edu["result"] = _clean_str(edu.get("result"))
+        # Strip common result prefixes: "Grade : ", "Result: ", "CGPA: " etc.
+        if edu["result"]:
+            edu["result"] = re.sub(
+                r"^(grade|result|cgpa|gpa|marks?|score)\s*[:\-]?\s*",
+                "",
+                edu["result"],
+                flags=re.IGNORECASE
+            ).strip()
         edu["graduation_year"] = normalize_date(edu.get("graduation_year"))
         # For graduation_year, strip the "-01" suffix (just keep "YYYY")
         if edu["graduation_year"] and edu["graduation_year"] != "Present":
             edu["graduation_year"] = edu["graduation_year"][:4]
 
+    # ── Tags ──
+    tags = data.get("tags") or []
+    data["tags"] = sorted(set(_clean_str(t) for t in tags if _clean_str(t)))
+
     # ── Certifications ──
-    certs = data.get("certifications") or []
-    data["certifications"] = sorted(set(_clean_str(c) for c in certs if _clean_str(c)))
+    for cert in data.get("certifications") or []:
+        if isinstance(cert, dict):
+            cert["name"] = _clean_str(cert.get("name", "")) or ""
+            cert["institute"] = _clean_str(cert.get("institute"))
+            cert["level"] = _clean_str(cert.get("level"))
+            cert["validity_start"] = normalize_date(cert.get("validity_start"))
+            cert["validity_end"] = normalize_date(cert.get("validity_end"))
 
     return data

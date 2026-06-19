@@ -116,6 +116,53 @@ class TestNormalizeResume:
         result = normalize_resume(data)
         assert result["education"][0]["graduation_year"] == "2023"
 
+    def test_education_result_cleaned(self):
+        data = {
+            "education": [
+                {"institution": "MIT", "degree": "BSc", "result": "  3.8  "},
+            ]
+        }
+        result = normalize_resume(data)
+        assert result["education"][0]["result"] == "3.8"
+
+    def test_education_result_null_for_empty(self):
+        data = {
+            "education": [
+                {"institution": "MIT", "degree": "BSc", "result": ""},
+            ]
+        }
+        result = normalize_resume(data)
+        assert result["education"][0]["result"] is None
+
+    def test_education_result_int_coercion(self):
+        data = {
+            "education": [
+                {"institution": "MIT", "degree": "BSc", "result": 3.8},
+            ]
+        }
+        result = normalize_resume(data)
+        assert result["education"][0]["result"] == "3.8"
+
+    def test_tags_sorted_and_deduplicated(self):
+        data = {"tags": ["Software Engineer", "python dev", "Software Engineer", "SQL"]}
+        result = normalize_resume(data)
+        assert result["tags"] == ["SQL", "Software Engineer", "python dev"]
+
+    def test_tags_empty_default(self):
+        data = {}
+        result = normalize_resume(data)
+        assert result["tags"] == []
+
+    def test_tags_none_default(self):
+        data = {"tags": None}
+        result = normalize_resume(data)
+        assert result["tags"] == []
+
+    def test_tags_filters_empty_strings(self):
+        data = {"tags": ["Python", "", "   ", "SQL"]}
+        result = normalize_resume(data)
+        assert result["tags"] == ["Python", "SQL"]
+
     def test_graduation_year_null_for_present(self):
         data = {
             "education": [
@@ -125,10 +172,51 @@ class TestNormalizeResume:
         result = normalize_resume(data)
         assert result["education"][0]["graduation_year"] == "Pres"
 
-    def test_sorts_certifications(self):
-        data = {"certifications": ["AWS", "Azure", "aws"]}
+    def test_certifications_structured(self):
+        data = {
+            "certifications": [
+                {
+                    "name": "AWS Solutions Architect",
+                    "institute": "  Amazon  ",
+                    "validity_start": "2023-06",
+                    "validity_end": "2026-06",
+                    "level": "Professional",
+                }
+            ]
+        }
         result = normalize_resume(data)
-        assert result["certifications"] == ["AWS", "Azure"]
+        cert = result["certifications"][0]
+        assert cert["name"] == "AWS Solutions Architect"
+        assert cert["institute"] == "Amazon"
+        assert cert["level"] == "Professional"
+        assert cert["validity_start"] == "2023-06"
+
+    def test_certifications_structured_minimal(self):
+        data = {
+            "certifications": [
+                {"name": "AWS Certified"}
+            ]
+        }
+        result = normalize_resume(data)
+        cert = result["certifications"][0]
+        assert cert["name"] == "AWS Certified"
+        assert cert["institute"] is None
+        assert cert["level"] is None
+
+    def test_certifications_structured_date_normalization(self):
+        data = {
+            "certifications": [
+                {
+                    "name": "PMP",
+                    "validity_start": 2024,
+                    "validity_end": "2027",
+                }
+            ]
+        }
+        result = normalize_resume(data)
+        cert = result["certifications"][0]
+        assert cert["validity_start"] == "2024-01"
+        assert cert["validity_end"] == "2027-01"
 
     def test_handles_missing_sections(self):
         data = {}
@@ -153,3 +241,39 @@ class TestNormalizeResume:
         data = {"summary": ""}
         result = normalize_resume(data)
         assert result["summary"] is None
+
+    def test_education_result_strips_grade_prefix(self):
+        data = {
+            "education": [
+                {"institution": "MIT", "degree": "BSc", "result": "Grade : 3.65 (CGPA), Vice Chancellor's Award."},
+            ]
+        }
+        result = normalize_resume(data)
+        assert result["education"][0]["result"] == "3.65 (CGPA), Vice Chancellor's Award."
+
+    def test_education_result_strips_cgpa_prefix(self):
+        data = {
+            "education": [
+                {"institution": "MIT", "degree": "BSc", "result": "CGPA: 3.8"},
+            ]
+        }
+        result = normalize_resume(data)
+        assert result["education"][0]["result"] == "3.8"
+
+    def test_education_result_strips_result_prefix(self):
+        data = {
+            "education": [
+                {"institution": "MIT", "degree": "BSc", "result": "Result : 98.9 (A)"},
+            ]
+        }
+        result = normalize_resume(data)
+        assert result["education"][0]["result"] == "98.9 (A)"
+
+    def test_education_result_preserves_first_class(self):
+        data = {
+            "education": [
+                {"institution": "MIT", "degree": "BSc", "result": "First Class"},
+            ]
+        }
+        result = normalize_resume(data)
+        assert result["education"][0]["result"] == "First Class"
